@@ -4,8 +4,8 @@
 #
 
 module KnifeVaultstrap
-  class VaultNodeCreate < Chef::Knife
-    banner "knife hec node create [options]"
+  class Vaultstrap < Chef::Knife
+    banner "knife vaultstrap [options]"
 
     # Don't lazy load or you'll get an error
     require 'chef/environment'
@@ -137,12 +137,12 @@ module KnifeVaultstrap
     def run
       if config[:node_hostname]
         node_host = config[:node_hostname]
-        nade_name = config[:node_chefname]
+        node_name = config[:node_chefname]
       else
         server = create_ec2_instance
         node_name = server.id
         node_host = server.dns_name
-     end
+      end
 
       # Create the API client
       puts "Creating client"
@@ -189,6 +189,20 @@ module KnifeVaultstrap
     end
 
     def create_ec2_instance
+      unless Chef::Config[:knife][:aws_credential_file].nil?
+        unless (Chef::Config[:knife].keys & [:aws_access_key_id, :aws_secret_access_key]).empty?
+          errors << "Either provide a credentials file or the access key and secret keys but not both."
+        end
+
+        aws_creds = []
+        File.read(Chef::Config[:knife][:aws_credential_file]).each_line do | line |
+          aws_creds << line.split("=").map(&:strip) if line.include?("=")
+        end
+        entries = Hash[*aws_creds.flatten]
+        Chef::Config[:knife][:aws_access_key_id] = entries['AWSAccessKeyId'] || entries['aws_access_key_id']
+        Chef::Config[:knife][:aws_secret_access_key] = entries['AWSSecretKey'] || entries['aws_secret_access_key']
+      end
+
       server = ec2_creater.connection.servers.create(ec2_creater.create_server_def)
       puts "Waiting on EC2 server:"
       server.wait_for { print  "."; ready? }
@@ -207,7 +221,7 @@ module KnifeVaultstrap
       bootstrap.config[:run_list] = config[:run_list]
       bootstrap.config[:bootstrap_version] = locate_config_value(:bootstrap_version)
       bootstrap.config[:distro] = locate_config_value(:distro)
-      bootstrap.config[:template_file] = "#{File.dirname(__FILE__)}/../../templates/knife_hec_template.erb"
+      bootstrap.config[:template_file] = "#{File.dirname(__FILE__)}/../../templates/knife_vaultstrap_template.erb"
       bootstrap.config[:environment] = locate_config_value(:environment)
       bootstrap.config[:prerelease] = config[:prerelease]
       bootstrap.config[:first_boot_attributes] = locate_config_value(:json_attributes) || {}
@@ -217,7 +231,7 @@ module KnifeVaultstrap
       bootstrap.config[:secret_file] = locate_config_value(:secret_file)
       bootstrap.config[:bootstrap_version] = locate_config_value(:bootstrap_version)
       bootstrap.config[:bootstrap_proxy] = locate_config_value(:bootstrap_proxy)
-      Chef::Config[:chef_server_url] = locate_config_value(:bootstrap_chef_server_url)
+      Chef::Config[:chef_server_url] = locate_config_value(:bootstrap_chef_server_url) if locate_config_value(:bootstrap_chef_server_url)
       bootstrap.config[:ssh_user] = config[:ssh_user] || 'ubuntu'
       bootstrap.config[:ssh_port] = config[:ssh_port]
       bootstrap.config[:ssh_gateway] = config[:ssh_gateway]
